@@ -6,9 +6,12 @@ The idea of this repo is that instead of asking a question to your favorite LLM 
 
 In a bit more detail, here is what happens when you submit a query:
 
-1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
+0. **Stage 0: Pre-research**. Before the council deliberates, Perplexity Sonar (via Straico) performs web research to gather factual context. The query is decomposed into 2-3 focused sub-queries (factual, practical, contextual) which are researched in parallel, then synthesized into a rich context document. This prevents hallucination and grounds the council's responses in real-world information.
+1. **Stage 1: First opinions**. The user query is given to all LLMs individually along with the research context, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
 2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
 3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
+
+All stage outputs include a **copy button** for easy markdown export. Conversations can be **renamed** (inline editing) and **deleted** (with confirmation) from the sidebar.
 
 ## Vibe Code Alert
 
@@ -32,15 +35,17 @@ npm install
 cd ..
 ```
 
-### 2. Configure API Key
+### 2. Configure API Keys
 
 Create a `.env` file in the project root:
 
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
+STRAICO_API_KEY=your-straico-api-key
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+- **OpenRouter**: Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+- **Straico**: Get your API key at [straico.com](https://straico.com/). This is used for Stage 0 pre-research via Perplexity Sonar (~10-12 coins per query).
 
 ### 3. Configure Models (Optional)
 
@@ -84,4 +89,5 @@ Then open http://localhost:5173 in your browser.
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
 - **Frontend:** React + Vite, react-markdown for rendering
 - **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+- **Pre-research:** Perplexity Sonar via Straico API (multi-query decomposition)
+- **Package Management:** uv for Python, npm (or bun) for JavaScript
