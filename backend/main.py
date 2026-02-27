@@ -10,7 +10,7 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import run_full_council, generate_conversation_title, stage0_research, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
 
 app = FastAPI(title="LLM Council API")
 
@@ -101,8 +101,8 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
-    # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
+    # Run the full council process (Stage 0 research + 3 deliberation stages)
+    stage0_result, stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         request.content
     )
 
@@ -111,11 +111,13 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         conversation_id,
         stage1_results,
         stage2_results,
-        stage3_result
+        stage3_result,
+        stage0=stage0_result
     )
 
     # Return the complete response with metadata
     return {
+        "stage0": stage0_result,
         "stage1": stage1_results,
         "stage2": stage2_results,
         "stage3": stage3_result,
@@ -147,9 +149,16 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 1: Collect responses
+            # Stage 0: Pre-research with web-search model
+            yield f"data: {json.dumps({'type': 'stage0_start'})}\n\n"
+            stage0_result = await stage0_research(request.content)
+            yield f"data: {json.dumps({'type': 'stage0_complete', 'data': stage0_result})}\n\n"
+
+            research_context = stage0_result.get('response')
+
+            # Stage 1: Collect responses (with research context)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
+            stage1_results = await stage1_collect_responses(request.content, research_context)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
             # Stage 2: Collect rankings
@@ -174,7 +183,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 conversation_id,
                 stage1_results,
                 stage2_results,
-                stage3_result
+                stage3_result,
+                stage0=stage0_result
             )
 
             # Send completion event

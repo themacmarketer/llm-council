@@ -2,10 +2,56 @@
 
 from typing import List, Dict, Any, Tuple
 from .openrouter import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, RESEARCH_MODEL
 
 
-async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
+async def stage0_research(user_query: str) -> Dict[str, Any]:
+    """
+    Stage 0: Use a web-search-capable model to research unfamiliar terms
+    in the user's query before sending it to the council.
+
+    Args:
+        user_query: The user's question
+
+    Returns:
+        Dict with 'model', 'response' (research context), and 'has_research' flag
+    """
+    research_prompt = f"""You are a research assistant. Your job is to search the web and provide factual background context that will help other AI models answer the following query accurately.
+
+Research any specific products, tools, platforms, companies, frameworks, or technical terms mentioned in the query. Focus on:
+- What each product/tool/platform IS (official description, purpose, key features)
+- Who makes it and when it launched
+- How it's typically used
+- Any Singapore-specific context if relevant
+
+If everything in the query is well-known and needs no research, respond with exactly: "NO_RESEARCH_NEEDED"
+
+Query: {user_query}
+
+Provide your research findings in a clear, factual format:"""
+
+    messages = [{"role": "user", "content": research_prompt}]
+
+    response = await query_model(RESEARCH_MODEL, messages, timeout=30.0)
+
+    if response is None:
+        return {
+            "model": RESEARCH_MODEL,
+            "response": None,
+            "has_research": False
+        }
+
+    content = response.get('content', '')
+    has_research = content.strip() != "NO_RESEARCH_NEEDED" and len(content.strip()) > 0
+
+    return {
+        "model": RESEARCH_MODEL,
+        "response": content if has_research else None,
+        "has_research": has_research
+    }
+
+
+async def stage1_collect_responses(user_query: str, research_context: str = None) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
 
@@ -15,7 +61,13 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     Returns:
         List of dicts with 'model' and 'response' keys
     """
-    messages = [{"role": "user", "content": user_query}]
+    messages = []
+    if research_context:
+        messages.append({
+            "role": "system",
+            "content": f"Background research has been conducted on the topics in the user's query. Use this context to provide an accurate, informed response:\n\n{research_context}"
+        })
+    messages.append({"role": "user", "content": user_query})
 
     # Query all models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
@@ -293,18 +345,22 @@ Title:"""
     return title
 
 
-async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+async def run_full_council(user_query: str) -> Tuple[Dict, List, List, Dict, Dict]:
     """
-    Run the complete 3-stage council process.
+    Run the complete council process (Stage 0 research + 3 deliberation stages).
 
     Args:
         user_query: The user's question
 
     Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+        Tuple of (stage0_result, stage1_results, stage2_results, stage3_result, metadata)
     """
-    # Stage 1: Collect individual responses
-    stage1_results = await stage1_collect_responses(user_query)
+    # Stage 0: Pre-research with web-search model
+    stage0_result = await stage0_research(user_query)
+    research_context = stage0_result.get('response')
+
+    # Stage 1: Collect individual responses (with research context if available)
+    stage1_results = await stage1_collect_responses(user_query, research_context)
 
     # If no models responded successfully, return error
     if not stage1_results:
@@ -332,4 +388,4 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         "aggregate_rankings": aggregate_rankings
     }
 
-    return stage1_results, stage2_results, stage3_result, metadata
+    return stage0_result, stage1_results, stage2_results, stage3_result, metadata

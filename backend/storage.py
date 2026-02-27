@@ -131,13 +131,15 @@ def add_assistant_message(
     conversation_id: str,
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
-    stage3: Dict[str, Any]
+    stage3: Dict[str, Any],
+    stage0: Dict[str, Any] = None
 ):
     """
-    Add an assistant message with all 3 stages to a conversation.
+    Add an assistant message with all stages to a conversation.
 
     Args:
         conversation_id: Conversation identifier
+        stage0: Research context from web-search model (optional)
         stage1: List of individual model responses
         stage2: List of model rankings
         stage3: Final synthesized response
@@ -146,12 +148,16 @@ def add_assistant_message(
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
-    conversation["messages"].append({
+    message = {
         "role": "assistant",
         "stage1": stage1,
         "stage2": stage2,
         "stage3": stage3
-    })
+    }
+    if stage0 is not None:
+        message["stage0"] = stage0
+
+    conversation["messages"].append(message)
 
     save_conversation(conversation)
 

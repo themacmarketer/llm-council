@@ -1,0 +1,25 @@
+.stage0 {
+  background: #f0f0ff;
+  border-color: #c8c8e6;
+}
+
+.research-content {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 6px;
+  border: 1px solid #c8c8e6;
+}
+
+.research-model {
+  color: #4a4a8a;
+  font-size: 12px;
+  font-family: monospace;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.research-text {
+  color: #333;
+  line-height: 1.7;
+  font-size: 14px;
+}
