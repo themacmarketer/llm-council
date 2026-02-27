@@ -77,7 +77,23 @@ export default function ChatInterface({
                   {msg.loading?.stage0 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 0: Researching the web...</span>
+                      <span>
+                        {msg.loading.stage0Phase === 'decomposing' && 'Analyzing query...'}
+                        {msg.loading.stage0Phase === 'researching' && (
+                          <>
+                            Researching {msg.loading.stage0SubQueries?.length || ''} topics
+                            {msg.loading.stage0SubQueries && (
+                              <span className="sub-query-chips">
+                                {msg.loading.stage0SubQueries.map((q, i) => (
+                                  <span key={i} className="sub-query-chip">{q}</span>
+                                ))}
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {msg.loading.stage0Phase === 'synthesizing' && 'Compiling research findings...'}
+                        {!msg.loading.stage0Phase && 'Running Stage 0: Researching the web...'}
+                      </span>
                     </div>
                   )}
                   {msg.stage0 && <Stage0 research={msg.stage0} />}

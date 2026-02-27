@@ -1,54 +1,232 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
+import asyncio
+import json
+import re
+from typing import List, Dict, Any, Tuple, AsyncGenerator
 from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, RESEARCH_MODEL
 
 
-async def stage0_research(user_query: str) -> Dict[str, Any]:
+async def _decompose_query(user_query: str) -> Dict[str, Any]:
     """
-    Stage 0: Use a web-search-capable model to research unfamiliar terms
-    in the user's query before sending it to the council.
-
-    Args:
-        user_query: The user's question
+    Use Sonar to decompose a user query into 2-3 focused sub-queries.
 
     Returns:
-        Dict with 'model', 'response' (research context), and 'has_research' flag
+        Dict with 'needs_research' (bool) and 'sub_queries' (list of strings)
     """
-    research_prompt = f"""You are a research assistant. Your job is to search the web and provide factual background context that will help other AI models answer the following query accurately.
+    decompose_prompt = f"""You are a research planning assistant. Given a user question, determine if it references specific products, tools, platforms, companies, frameworks, or niche topics that would benefit from web research.
 
-Research any specific products, tools, platforms, companies, frameworks, or technical terms mentioned in the query. Focus on:
-- What each product/tool/platform IS (official description, purpose, key features)
-- Who makes it and when it launched
-- How it's typically used
-- Any Singapore-specific context if relevant
+If the question only involves well-known, general knowledge topics (e.g., Python, Excel, basic business concepts), respond with:
+{{"needs_research": false}}
 
-If everything in the query is well-known and needs no research, respond with exactly: "NO_RESEARCH_NEEDED"
+If research would help, break the question into 2-3 focused web search sub-queries, each targeting a DIFFERENT aspect:
+- Sub-query 1: What the product/tool/platform IS (factual overview)
+- Sub-query 2: Practical use cases, workflows, tutorials, community examples
+- Sub-query 3: Context-specific info relevant to the question (e.g., industry-specific, regional)
 
-Query: {user_query}
+Rules:
+- Maximum 3 sub-queries
+- Each sub-query should be concise (under 20 words)
+- Each should target a genuinely different angle
 
-Provide your research findings in a clear, factual format:"""
+Respond in JSON format ONLY, no other text:
+{{"needs_research": true, "sub_queries": ["query1", "query2", "query3"]}}
+
+User question: {user_query}"""
+
+    messages = [{"role": "user", "content": decompose_prompt}]
+    response = await query_model(RESEARCH_MODEL, messages, timeout=20.0)
+
+    if response is None:
+        return {"needs_research": True, "sub_queries": [user_query]}
+
+    content = response.get('content', '').strip()
+
+    # Try to parse JSON from the response
+    try:
+        # Find JSON in the response (may be wrapped in markdown code blocks)
+        json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            if not parsed.get('needs_research', True):
+                return {"needs_research": False, "sub_queries": []}
+            sub_queries = parsed.get('sub_queries', [user_query])
+            # Cap at 3 sub-queries
+            return {"needs_research": True, "sub_queries": sub_queries[:3]}
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    # Fallback: if parsing fails, just research the original query
+    return {"needs_research": True, "sub_queries": [user_query]}
+
+
+async def _research_sub_query(sub_query: str, label: str) -> Dict[str, Any]:
+    """
+    Research a single sub-query with an enhanced, deep prompt.
+
+    Returns:
+        Dict with 'label', 'query', 'response' (or None on failure)
+    """
+    research_prompt = f"""You are a web research assistant. Search the web and provide thorough, practical information about the following topic.
+
+Research topic: {sub_query}
+
+Provide comprehensive findings including:
+- What it is (official description, key features, purpose)
+- Practical use cases and real-world examples
+- Getting started guides, tutorials, or community resources
+- Pricing, licensing, or availability info if applicable
+- Notable alternatives or competitors
+- Any relevant regional context (especially Singapore/Asia if applicable)
+
+Be factual and cite specific details. If you cannot find information, say so clearly rather than guessing."""
 
     messages = [{"role": "user", "content": research_prompt}]
-
     response = await query_model(RESEARCH_MODEL, messages, timeout=30.0)
 
     if response is None:
+        return {"label": label, "query": sub_query, "response": None}
+
+    content = response.get('content', '')
+    return {"label": label, "query": sub_query, "response": content if content.strip() else None}
+
+
+async def stage0_research(user_query: str) -> Dict[str, Any]:
+    """
+    Enhanced Stage 0: Decompose → Parallel Research → Synthesize.
+
+    1. Decomposes the query into 2-3 focused sub-queries
+    2. Researches each sub-query in parallel using Sonar
+    3. Concatenates results with clear section headers
+
+    Returns:
+        Dict with 'model', 'response', 'has_research', 'sub_queries', 'sub_results'
+    """
+    # Phase A: Decompose query
+    decomposition = await _decompose_query(user_query)
+
+    if not decomposition.get('needs_research', True):
         return {
             "model": RESEARCH_MODEL,
             "response": None,
-            "has_research": False
+            "has_research": False,
+            "sub_queries": [],
+            "sub_results": []
         }
 
-    content = response.get('content', '')
-    has_research = content.strip() != "NO_RESEARCH_NEEDED" and len(content.strip()) > 0
+    sub_queries = decomposition['sub_queries']
+
+    # Phase B: Parallel research on all sub-queries
+    tasks = [
+        _research_sub_query(sq, f"Research {i+1}")
+        for i, sq in enumerate(sub_queries)
+    ]
+    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Filter out failures
+    sub_results = []
+    for result in raw_results:
+        if isinstance(result, Exception) or result is None:
+            continue
+        if isinstance(result, dict) and result.get('response'):
+            sub_results.append(result)
+
+    if not sub_results:
+        return {
+            "model": RESEARCH_MODEL,
+            "response": None,
+            "has_research": False,
+            "sub_queries": sub_queries,
+            "sub_results": []
+        }
+
+    # Phase C: Synthesize — concatenate with section headers
+    if len(sub_results) == 1:
+        merged = sub_results[0]['response']
+    else:
+        sections = []
+        for sub in sub_results:
+            sections.append(f"### {sub['query']}\n\n{sub['response']}")
+        merged = "\n\n---\n\n".join(sections)
 
     return {
         "model": RESEARCH_MODEL,
-        "response": content if has_research else None,
-        "has_research": has_research
+        "response": merged,
+        "has_research": True,
+        "sub_queries": sub_queries,
+        "sub_results": sub_results
     }
+
+
+async def stage0_research_stream(user_query: str) -> AsyncGenerator[Tuple[str, Dict], None]:
+    """
+    Enhanced Stage 0 as an async generator for SSE streaming.
+    Yields (event_type, data) tuples for granular progress updates.
+    """
+    # Phase A: Decompose
+    yield ('stage0_decomposing', {})
+    decomposition = await _decompose_query(user_query)
+
+    if not decomposition.get('needs_research', True):
+        result = {
+            "model": RESEARCH_MODEL,
+            "response": None,
+            "has_research": False,
+            "sub_queries": [],
+            "sub_results": []
+        }
+        yield ('stage0_complete', result)
+        return
+
+    sub_queries = decomposition['sub_queries']
+    yield ('stage0_sub_queries', {"sub_queries": sub_queries})
+
+    # Phase B: Parallel research
+    yield ('stage0_researching', {"sub_queries": sub_queries})
+    tasks = [
+        _research_sub_query(sq, f"Research {i+1}")
+        for i, sq in enumerate(sub_queries)
+    ]
+    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    sub_results = []
+    for i, result in enumerate(raw_results):
+        if isinstance(result, Exception) or result is None:
+            continue
+        if isinstance(result, dict) and result.get('response'):
+            sub_results.append(result)
+            yield ('stage0_sub_result', {"index": i, "result": result})
+
+    if not sub_results:
+        result = {
+            "model": RESEARCH_MODEL,
+            "response": None,
+            "has_research": False,
+            "sub_queries": sub_queries,
+            "sub_results": []
+        }
+        yield ('stage0_complete', result)
+        return
+
+    # Phase C: Synthesize
+    yield ('stage0_synthesizing', {})
+    if len(sub_results) == 1:
+        merged = sub_results[0]['response']
+    else:
+        sections = []
+        for sub in sub_results:
+            sections.append(f"### {sub['query']}\n\n{sub['response']}")
+        merged = "\n\n---\n\n".join(sections)
+
+    result = {
+        "model": RESEARCH_MODEL,
+        "response": merged,
+        "has_research": True,
+        "sub_queries": sub_queries,
+        "sub_results": sub_results
+    }
+    yield ('stage0_complete', result)
 
 
 async def stage1_collect_responses(user_query: str, research_context: str = None) -> List[Dict[str, Any]]:
@@ -326,8 +504,8 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use gemini-2.5-flash for title generation (fast and cheap)
-    response = await query_model("google/gemini-2.5-flash", messages, timeout=30.0)
+    # Use research model for title generation (Sonar is fast and cheap)
+    response = await query_model(RESEARCH_MODEL, messages, timeout=30.0)
 
     if response is None:
         # Fallback to a generic title

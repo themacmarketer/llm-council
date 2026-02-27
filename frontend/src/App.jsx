@@ -99,6 +99,49 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.loading.stage0 = true;
+              lastMsg.loading.stage0Phase = null;
+              lastMsg.loading.stage0SubQueries = null;
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage0_decomposing':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.loading.stage0Phase = 'decomposing';
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage0_sub_queries':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.loading.stage0Phase = 'researching';
+              lastMsg.loading.stage0SubQueries = event.data.sub_queries;
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage0_researching':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.loading.stage0Phase = 'researching';
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage0_sub_result':
+            // Progressive partial results (logged but not displayed until complete)
+            break;
+
+          case 'stage0_synthesizing':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.loading.stage0Phase = 'synthesizing';
               return { ...prev, messages };
             });
             break;
@@ -109,6 +152,8 @@ function App() {
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage0 = event.data;
               lastMsg.loading.stage0 = false;
+              lastMsg.loading.stage0Phase = null;
+              lastMsg.loading.stage0SubQueries = null;
               return { ...prev, messages };
             });
             break;

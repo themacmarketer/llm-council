@@ -10,7 +10,7 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage0_research, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import run_full_council, generate_conversation_title, stage0_research_stream, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
 
 app = FastAPI(title="LLM Council API")
 
@@ -149,10 +149,16 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 0: Pre-research with web-search model
+            # Stage 0: Enhanced pre-research with decompose → parallel research → synthesize
             yield f"data: {json.dumps({'type': 'stage0_start'})}\n\n"
-            stage0_result = await stage0_research(request.content)
-            yield f"data: {json.dumps({'type': 'stage0_complete', 'data': stage0_result})}\n\n"
+            stage0_result = None
+            async for event_type, event_data in stage0_research_stream(request.content):
+                yield f"data: {json.dumps({'type': event_type, 'data': event_data})}\n\n"
+                if event_type == 'stage0_complete':
+                    stage0_result = event_data
+
+            if stage0_result is None:
+                stage0_result = {"model": "perplexity/sonar", "response": None, "has_research": False, "sub_queries": [], "sub_results": []}
 
             research_context = stage0_result.get('response')
 
