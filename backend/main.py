@@ -34,6 +34,11 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class UpdateConversationRequest(BaseModel):
+    """Request to update conversation properties."""
+    title: str
+
+
 class ConversationMetadata(BaseModel):
     """Conversation metadata for list view."""
     id: str
@@ -77,6 +82,26 @@ async def get_conversation(conversation_id: str):
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation."""
+    try:
+        storage.delete_conversation(conversation_id)
+        return {"status": "deleted"}
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+
+@app.patch("/api/conversations/{conversation_id}")
+async def update_conversation(conversation_id: str, request: UpdateConversationRequest):
+    """Update a conversation's title."""
+    try:
+        storage.update_conversation_title(conversation_id, request.title)
+        return {"status": "updated", "title": request.title}
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Conversation not found")
 
 
 @app.post("/api/conversations/{conversation_id}/message")

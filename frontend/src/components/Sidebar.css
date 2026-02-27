@@ -50,6 +50,9 @@
 }
 
 .conversation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px;
   margin-bottom: 4px;
   border-radius: 6px;
@@ -66,13 +69,65 @@
   border: 1px solid #4a90e2;
 }
 
+.conversation-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .conversation-title {
   color: #333;
   font-size: 14px;
   margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .conversation-meta {
   color: #999;
   font-size: 12px;
+}
+
+/* Action buttons: hidden by default, shown on hover */
+.conversation-actions {
+  display: none;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.conversation-item:hover .conversation-actions,
+.conversation-item.active .conversation-actions {
+  display: flex;
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0.6;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.action-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.delete-btn:hover {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+/* Inline rename input */
+.rename-input {
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 14px;
+  border: 1px solid #4a90e2;
+  border-radius: 4px;
+  outline: none;
+  background: white;
+  margin-bottom: 4px;
 }
