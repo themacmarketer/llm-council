@@ -4,6 +4,8 @@
 
 The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
 
+This fork modifies the original council, to add a research phase using perplexity/sonar to provide more context to the topic, before council members are consulted.
+
 In a bit more detail, here is what happens when you submit a query:
 
 0. **Stage 0: Pre-research**. Before the council deliberates, Perplexity Sonar (via Straico) performs web research to gather factual context. The query is decomposed into 2-3 focused sub-queries (factual, practical, contextual) which are researched in parallel, then synthesized into a rich context document. This prevents hallucination and grounds the council's responses in real-world information.
