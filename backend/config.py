@@ -12,6 +12,7 @@ OPENROUTER_API_KEY = STRAICO_API_KEY
 # Council members - list of model identifiers
 COUNCIL_MODELS = [
     "openai/gpt-5.2",
+    "anthropic/claude-sonnet-4.5",
     "x-ai/grok-4",
     "google/gemini-3-pro-preview",
     "deepseek/deepseek-r1",
@@ -26,5 +27,5 @@ RESEARCH_MODEL = "perplexity/sonar"
 # API endpoint (Straico OpenAI-compatible)
 OPENROUTER_API_URL = "https://api.straico.com/v0/chat/completions"
 
-# Data directory for conversation storage
-DATA_DIR = "data/conversations"
+# Data directory for conversation storage — /tmp is the only writable path on Vercel
+DATA_DIR = "/tmp/conversations" if os.getenv("VERCEL") else "data/conversations"
