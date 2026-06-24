@@ -1,0 +1,6 @@
+uv.lock
+pyproject.toml
+.python-version
+data/
+frontend/node_modules/
+frontend/.vite/
