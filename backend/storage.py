@@ -1,130 +1,130 @@
-"""JSON-based storage for conversations."""
+"""Conversation storage: Upstash Redis (Vercel) or local JSON files (dev)."""
 
 import json
 import os
+import httpx
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR
 
+# Upstash Redis REST API — set when KV_REST_API_URL env var is present
+_KV_URL = os.getenv("KV_REST_API_URL")
+_KV_TOKEN = os.getenv("KV_REST_API_TOKEN")
+USE_REDIS = bool(_KV_URL and _KV_TOKEN)
 
-def ensure_data_dir():
-    """Ensure the data directory exists."""
+_CONV_LIST_KEY = "llm_council:conversations"
+
+
+# ---------------------------------------------------------------------------
+# Redis helpers
+# ---------------------------------------------------------------------------
+
+def _redis(method: str, *path_parts, body=None):
+    """Synchronous Upstash REST call."""
+    url = f"{_KV_URL}/{method}/" + "/".join(str(p) for p in path_parts)
+    headers = {"Authorization": f"Bearer {_KV_TOKEN}"}
+    resp = httpx.request("POST" if body is not None else "GET", url,
+                         headers=headers, json=body, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("result")
+
+
+def _conv_key(conversation_id: str) -> str:
+    return f"llm_council:conv:{conversation_id}"
+
+
+# ---------------------------------------------------------------------------
+# File helpers (local dev)
+# ---------------------------------------------------------------------------
+
+def _ensure_data_dir():
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
 
-def get_conversation_path(conversation_id: str) -> str:
-    """Get the file path for a conversation."""
+def _conv_path(conversation_id: str) -> str:
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
 
+# ---------------------------------------------------------------------------
+# Public API — same interface as before
+# ---------------------------------------------------------------------------
+
 def create_conversation(conversation_id: str) -> Dict[str, Any]:
-    """
-    Create a new conversation.
-
-    Args:
-        conversation_id: Unique identifier for the conversation
-
-    Returns:
-        New conversation dict
-    """
-    ensure_data_dir()
-
     conversation = {
         "id": conversation_id,
         "created_at": datetime.utcnow().isoformat(),
         "title": "New Conversation",
-        "messages": []
+        "messages": [],
     }
-
-    # Save to file
-    path = get_conversation_path(conversation_id)
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
-
+    if USE_REDIS:
+        _redis("set", _conv_key(conversation_id), body=json.dumps(conversation))
+        _redis("sadd", _CONV_LIST_KEY, body=conversation_id)
+    else:
+        _ensure_data_dir()
+        with open(_conv_path(conversation_id), "w") as f:
+            json.dump(conversation, f, indent=2)
     return conversation
 
 
 def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Load a conversation from storage.
-
-    Args:
-        conversation_id: Unique identifier for the conversation
-
-    Returns:
-        Conversation dict or None if not found
-    """
-    path = get_conversation_path(conversation_id)
-
+    if USE_REDIS:
+        raw = _redis("get", _conv_key(conversation_id))
+        return json.loads(raw) if raw else None
+    path = _conv_path(conversation_id)
     if not os.path.exists(path):
         return None
-
-    with open(path, 'r') as f:
+    with open(path) as f:
         return json.load(f)
 
 
 def save_conversation(conversation: Dict[str, Any]):
-    """
-    Save a conversation to storage.
-
-    Args:
-        conversation: Conversation dict to save
-    """
-    ensure_data_dir()
-
-    path = get_conversation_path(conversation['id'])
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
+    if USE_REDIS:
+        _redis("set", _conv_key(conversation["id"]), body=json.dumps(conversation))
+    else:
+        _ensure_data_dir()
+        with open(_conv_path(conversation["id"]), "w") as f:
+            json.dump(conversation, f, indent=2)
 
 
 def list_conversations() -> List[Dict[str, Any]]:
-    """
-    List all conversations (metadata only).
-
-    Returns:
-        List of conversation metadata dicts
-    """
-    ensure_data_dir()
-
+    if USE_REDIS:
+        ids = _redis("smembers", _CONV_LIST_KEY) or []
+        conversations = []
+        for cid in ids:
+            conv = get_conversation(cid)
+            if conv:
+                conversations.append({
+                    "id": conv["id"],
+                    "created_at": conv["created_at"],
+                    "title": conv.get("title", "New Conversation"),
+                    "message_count": len(conv["messages"]),
+                })
+        conversations.sort(key=lambda x: x["created_at"], reverse=True)
+        return conversations
+    # local file fallback
+    _ensure_data_dir()
     conversations = []
     for filename in os.listdir(DATA_DIR):
-        if filename.endswith('.json'):
-            path = os.path.join(DATA_DIR, filename)
-            with open(path, 'r') as f:
+        if filename.endswith(".json"):
+            with open(os.path.join(DATA_DIR, filename)) as f:
                 data = json.load(f)
-                # Return metadata only
                 conversations.append({
                     "id": data["id"],
                     "created_at": data["created_at"],
                     "title": data.get("title", "New Conversation"),
-                    "message_count": len(data["messages"])
+                    "message_count": len(data["messages"]),
                 })
-
-    # Sort by creation time, newest first
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
-
     return conversations
 
 
 def add_user_message(conversation_id: str, content: str):
-    """
-    Add a user message to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        content: User message content
-    """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
+    conv = get_conversation(conversation_id)
+    if conv is None:
         raise ValueError(f"Conversation {conversation_id} not found")
-
-    conversation["messages"].append({
-        "role": "user",
-        "content": content
-    })
-
-    save_conversation(conversation)
+    conv["messages"].append({"role": "user", "content": content})
+    save_conversation(conv)
 
 
 def add_assistant_message(
@@ -132,68 +132,35 @@ def add_assistant_message(
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
     stage3: Dict[str, Any],
-    stage0: Dict[str, Any] = None
+    stage0: Dict[str, Any] = None,
 ):
-    """
-    Add an assistant message with all stages to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        stage0: Research context from web-search model (optional)
-        stage1: List of individual model responses
-        stage2: List of model rankings
-        stage3: Final synthesized response
-    """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
+    conv = get_conversation(conversation_id)
+    if conv is None:
         raise ValueError(f"Conversation {conversation_id} not found")
-
-    message = {
-        "role": "assistant",
-        "stage1": stage1,
-        "stage2": stage2,
-        "stage3": stage3
-    }
+    message = {"role": "assistant", "stage1": stage1, "stage2": stage2, "stage3": stage3}
     if stage0 is not None:
         message["stage0"] = stage0
-
-    conversation["messages"].append(message)
-
-    save_conversation(conversation)
+    conv["messages"].append(message)
+    save_conversation(conv)
 
 
 def update_conversation_title(conversation_id: str, title: str):
-    """
-    Update the title of a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        title: New title for the conversation
-    """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
+    conv = get_conversation(conversation_id)
+    if conv is None:
         raise ValueError(f"Conversation {conversation_id} not found")
-
-    conversation["title"] = title
-    save_conversation(conversation)
+    conv["title"] = title
+    save_conversation(conv)
 
 
 def delete_conversation(conversation_id: str) -> bool:
-    """
-    Delete a conversation from storage.
-
-    Args:
-        conversation_id: Conversation identifier
-
-    Returns:
-        True if deleted successfully
-
-    Raises:
-        ValueError: If conversation not found
-    """
-    path = get_conversation_path(conversation_id)
+    if USE_REDIS:
+        deleted = _redis("del", _conv_key(conversation_id))
+        _redis("srem", _CONV_LIST_KEY, body=conversation_id)
+        if not deleted:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        return True
+    path = _conv_path(conversation_id)
     if not os.path.exists(path):
         raise ValueError(f"Conversation {conversation_id} not found")
-
     os.remove(path)
     return True
