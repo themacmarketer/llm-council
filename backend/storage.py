@@ -20,12 +20,14 @@ _CONV_LIST_KEY = "llm_council:conversations"
 # Redis helpers
 # ---------------------------------------------------------------------------
 
-def _redis(method: str, *path_parts, body=None):
-    """Synchronous Upstash REST call."""
-    url = f"{_KV_URL}/{method}/" + "/".join(str(p) for p in path_parts)
-    headers = {"Authorization": f"Bearer {_KV_TOKEN}"}
-    resp = httpx.request("POST" if body is not None else "GET", url,
-                         headers=headers, json=body, timeout=10)
+def _redis(*args):
+    """Execute a Redis command via Upstash REST API (POST / with JSON array body)."""
+    resp = httpx.post(
+        _KV_URL,
+        headers={"Authorization": f"Bearer {_KV_TOKEN}"},
+        json=list(args),
+        timeout=10,
+    )
     resp.raise_for_status()
     return resp.json().get("result")
 
@@ -58,8 +60,8 @@ def create_conversation(conversation_id: str) -> Dict[str, Any]:
         "messages": [],
     }
     if USE_REDIS:
-        _redis("set", _conv_key(conversation_id), body=json.dumps(conversation))
-        _redis("sadd", _CONV_LIST_KEY, body=conversation_id)
+        _redis("SET", _conv_key(conversation_id), json.dumps(conversation))
+        _redis("SADD", _CONV_LIST_KEY, conversation_id)
     else:
         _ensure_data_dir()
         with open(_conv_path(conversation_id), "w") as f:
@@ -69,7 +71,7 @@ def create_conversation(conversation_id: str) -> Dict[str, Any]:
 
 def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
     if USE_REDIS:
-        raw = _redis("get", _conv_key(conversation_id))
+        raw = _redis("GET", _conv_key(conversation_id))
         return json.loads(raw) if raw else None
     path = _conv_path(conversation_id)
     if not os.path.exists(path):
@@ -80,7 +82,7 @@ def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
 
 def save_conversation(conversation: Dict[str, Any]):
     if USE_REDIS:
-        _redis("set", _conv_key(conversation["id"]), body=json.dumps(conversation))
+        _redis("SET", _conv_key(conversation["id"]), json.dumps(conversation))
     else:
         _ensure_data_dir()
         with open(_conv_path(conversation["id"]), "w") as f:
@@ -89,7 +91,7 @@ def save_conversation(conversation: Dict[str, Any]):
 
 def list_conversations() -> List[Dict[str, Any]]:
     if USE_REDIS:
-        ids = _redis("smembers", _CONV_LIST_KEY) or []
+        ids = _redis("SMEMBERS", _CONV_LIST_KEY) or []
         conversations = []
         for cid in ids:
             conv = get_conversation(cid)
@@ -154,8 +156,8 @@ def update_conversation_title(conversation_id: str, title: str):
 
 def delete_conversation(conversation_id: str) -> bool:
     if USE_REDIS:
-        deleted = _redis("del", _conv_key(conversation_id))
-        _redis("srem", _CONV_LIST_KEY, body=conversation_id)
+        deleted = _redis("DEL", _conv_key(conversation_id))
+        _redis("SREM", _CONV_LIST_KEY, conversation_id)
         if not deleted:
             raise ValueError(f"Conversation {conversation_id} not found")
         return True
