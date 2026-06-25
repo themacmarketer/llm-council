@@ -13,8 +13,8 @@ OPENROUTER_API_KEY = STRAICO_API_KEY
 COUNCIL_MODELS = [
     "openai/gpt-5.2",
     "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
-    "google/gemini-3-pro-preview",
+    "moonshotai/kimi-k2-thinking",
+    "google/gemini-3.1-pro-preview",
     "deepseek/deepseek-r1",
 ]
 
@@ -22,7 +22,7 @@ COUNCIL_MODELS = [
 CHAIRMAN_MODEL = "claude-opus-4-5"
 
 # Research model - web-search-capable model for Stage 0 pre-research
-RESEARCH_MODEL = "perplexity/sonar"
+RESEARCH_MODEL = "perplexity/sonar3"
 
 # API endpoint (Straico OpenAI-compatible)
 OPENROUTER_API_URL = "https://api.straico.com/v0/chat/completions"
