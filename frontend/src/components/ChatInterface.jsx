@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import CopyButton from './CopyButton';
 import Stage0 from './Stage0';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
@@ -62,7 +63,10 @@ export default function ChatInterface({
             <div key={index} className="message-group">
               {msg.role === 'user' ? (
                 <div className="user-message">
-                  <div className="message-label">You</div>
+                  <div className="user-message-header">
+                    <div className="message-label">You</div>
+                    <CopyButton content={msg.content} />
+                  </div>
                   <div className="message-content">
                     <div className="markdown-content">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>

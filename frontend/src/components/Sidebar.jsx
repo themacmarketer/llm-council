@@ -39,7 +39,7 @@ export default function Sidebar({
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <h1>LLM Council</h1>
+        <h1>LLM Council <span className="version-badge">v1.1.0</span></h1>
         <button className="new-conversation-btn" onClick={onNewConversation}>
           + New Conversation
         </button>

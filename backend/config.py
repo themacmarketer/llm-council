@@ -24,6 +24,9 @@ CHAIRMAN_MODEL = "claude-opus-4-5"
 # Research model - web-search-capable model for Stage 0 pre-research
 RESEARCH_MODEL = "perplexity/sonar3"
 
+# Fallback for Stage 0 when RESEARCH_MODEL is unavailable
+STAGE0_FALLBACK_MODEL = "openai/gpt-5.2"
+
 # API endpoint (Straico OpenAI-compatible)
 OPENROUTER_API_URL = "https://api.straico.com/v0/chat/completions"
 

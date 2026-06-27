@@ -5,7 +5,7 @@ import json
 import re
 from typing import List, Dict, Any, Tuple, AsyncGenerator
 from .openrouter import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, RESEARCH_MODEL
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, RESEARCH_MODEL, STAGE0_FALLBACK_MODEL
 
 
 async def _decompose_query(user_query: str) -> Dict[str, Any]:
@@ -37,7 +37,8 @@ User question: {user_query}"""
 
     messages = [{"role": "user", "content": decompose_prompt}]
     response = await query_model(RESEARCH_MODEL, messages, timeout=20.0)
-
+    if response is None:
+        response = await query_model(STAGE0_FALLBACK_MODEL, messages, timeout=20.0)
     if response is None:
         return {"needs_research": True, "sub_queries": [user_query]}
 
@@ -84,7 +85,8 @@ Be factual and cite specific details. If you cannot find information, say so cle
 
     messages = [{"role": "user", "content": research_prompt}]
     response = await query_model(RESEARCH_MODEL, messages, timeout=30.0)
-
+    if response is None:
+        response = await query_model(STAGE0_FALLBACK_MODEL, messages, timeout=30.0)
     if response is None:
         return {"label": label, "query": sub_query, "response": None}
 

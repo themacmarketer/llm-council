@@ -51,6 +51,16 @@
   letter-spacing: 0.5px;
 }
 
+.user-message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-message-header .copy-button {
+  margin-bottom: 8px;
+}
+
 .user-message .message-content {
   background: #f0f7ff;
   padding: 16px;
